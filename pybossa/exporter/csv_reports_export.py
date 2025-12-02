@@ -103,10 +103,8 @@ class ProjectReportCsvExporter(CsvExporter):
         if csv_task_generator is not None:
             datafile = tempfile.NamedTemporaryFile()
             try:
-                for line in csv_task_generator:
-                    datafile.write(str(line))
+                datafile.write(str(csv_task_generator).encode('utf-8'))
                 datafile.flush()
-                csv_task_generator.close()  # delete temp csv file
                 zipped_datafile = tempfile.NamedTemporaryFile()
                 try:
                     _zip = self._zip_factory(zipped_datafile.name)
