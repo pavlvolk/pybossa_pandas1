@@ -29,9 +29,20 @@ class Sentinel(object):
             self.init_app(app)
 
     def init_app(self, app):
-        self.connection = sentinel.Sentinel(app.config['REDIS_SENTINEL'],
-                                            socket_timeout=0.1)
-        redis_db = app.config.get('REDIS_DB') or 0
-        redis_master = app.config.get('REDIS_MASTER') or 'mymaster'
-        self.master = self.connection.master_for(redis_master, db=redis_db)
-        self.slave = self.connection.slave_for(redis_master, db=redis_db)
+        socket_timeout = app.config.get('REDIS_SOCKET_TIMEOUT', None)
+        retry_on_timeout = app.config.get('REDIS_RETRY_ON_TIMEOUT', True)
+        redis_db = app.config.get('REDIS_DB', 0)
+        redis_master = app.config.get('REDIS_MASTER', 'mymaster')
+        if app.config.get('REDIS_SENTINEL'):
+            self.connection = sentinel.Sentinel(app.config['REDIS_SENTINEL'],
+                                                socket_timeout=socket_timeout,
+                                                retry_on_timeout=retry_on_timeout)
+            self.master = self.connection.master_for(redis_master, db=redis_db)
+            self.slave = self.connection.slave_for(redis_master, db=redis_db)
+        else:
+            self.connection = None
+            self.master = StrictRedis(host=app.config.get('REDIS_HOST', 'localhost'),
+                                      port=app.config.get('REDIS_PORT', 6379),
+                                      db=redis_db,
+                                      password=app.config.get('REDIS_PASSWORD'))
+            self.slave = self.master

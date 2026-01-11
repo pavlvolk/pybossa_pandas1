@@ -16,6 +16,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with PYBOSSA.  If not, see <http://www.gnu.org/licenses/>.
 """Module with PYBOSSA utils."""
+import os
+
 from yacryptopan import CryptoPAn
 from datetime import timedelta, datetime
 from functools import update_wrapper
@@ -42,6 +44,10 @@ import re
 import pycountry
 
 
+def redis_cache_is_enabled():
+    return os.environ.get('PYBOSSA_REDIS_CACHE_DISABLED') is None
+
+
 def last_flashed_message():
     """Return last flashed message by flask."""
     messages = get_flashed_messages(with_categories=True)
@@ -58,9 +64,11 @@ def form_to_json(form):
     tmp['csrf'] = generate_csrf()
     return tmp
 
+
 def user_to_json(user):
     """Return a user in JSON format."""
     return user.dictize()
+
 
 def hash_last_flash_message():
     """Base64 encode the last flash message"""
@@ -70,13 +78,14 @@ def hash_last_flash_message():
         data['flash'] = message_and_status[1]
         data['status'] = message_and_status[0]
     json_data = json.dumps(data)
-    return base64.b64encode(json_data)
+    return base64.b64encode(json_data.encode('utf-8'))
+
 
 def handle_content_type(data):
     """Return HTML or JSON based on request type."""
     from pybossa.model.project import Project
     if (request.headers.get('Content-Type') == 'application/json' or
-        request.args.get('response_format') == 'json'):
+            request.args.get('response_format') == 'json'):
         message_and_status = last_flashed_message()
         if message_and_status:
             data['flash'] = message_and_status[1]
@@ -87,7 +96,8 @@ def handle_content_type(data):
             if isinstance(data[item], Pagination):
                 data[item] = data[item].to_json()
             if (item == 'announcements'):
-                data[item] = [announcement.to_public_json() for announcement in data[item]]
+                data[item] = [announcement.to_public_json()
+                              for announcement in data[item]]
             if (item == 'blogposts'):
                 data[item] = [blog.to_public_json() for blog in data[item]]
             if (item == 'categories'):
@@ -124,12 +134,13 @@ def handle_content_type(data):
         else:
             return render_template(template, **data)
 
+
 def redirect_content_type(url, status=None):
     data = dict(next=url)
     if status is not None:
         data['status'] = status
     if (request.headers.get('Content-Type') == 'application/json' or
-        request.args.get('response_format') == 'json'):
+            request.args.get('response_format') == 'json'):
         return handle_content_type(data)
     else:
         return redirect(url)
@@ -139,12 +150,12 @@ def url_for_app_type(endpoint, _hash_last_flash=False, **values):
     """Generate a URL for an SPA, or otherwise."""
     spa_server_name = current_app.config.get('SPA_SERVER_NAME')
     if spa_server_name:
-      values.pop('_external', None)
-      values.pop('_scheme', None)
-      if _hash_last_flash:
-          values['flash'] = hash_last_flash_message()
-          return spa_server_name + url_for(endpoint, **values)
-      return spa_server_name + url_for(endpoint, **values)
+        values.pop('_external', None)
+        values.pop('_scheme', None)
+        if _hash_last_flash:
+            values['flash'] = hash_last_flash_message()
+            return spa_server_name + url_for(endpoint, **values)
+        return spa_server_name + url_for(endpoint, **values)
     return url_for(endpoint, **values)
 
 
@@ -207,24 +218,24 @@ def pretty_date(time=False):
         if second_diff < 120:
             return "a minute ago"
         if second_diff < 3600:
-            return ' '.join([str(second_diff / 60), "minutes ago"])
+            return ' '.join([str(int(second_diff / 60)), "minutes ago"])
         if second_diff < 7200:
             return "an hour ago"
         if second_diff < 86400:
-            return ' '.join([str(second_diff / 3600), "hours ago"])
+            return ' '.join([str(int(second_diff / 3600)), "hours ago"])
     if day_diff == 1:
         return "Yesterday"
     if day_diff < 7:
-        return ' '.join([str(day_diff), "days ago"])
+        return ' '.join([str(int(day_diff)), "days ago"])
     if day_diff < 31:
-        return ' '.join([str(day_diff / 7), "weeks ago"])
+        return ' '.join([str(int(day_diff / 7)), "weeks ago"])
     if day_diff < 60:
-        return ' '.join([str(day_diff / 30), "month ago"])
+        return ' '.join([str(int(day_diff / 30)), "month ago"])
     if day_diff < 365:
-        return ' '.join([str(day_diff / 30), "months ago"])
+        return ' '.join([str(int(day_diff / 30)), "months ago"])
     if day_diff < (365 * 2):
-        return ' '.join([str(day_diff / 365), "year ago"])
-    return ' '.join([str(day_diff / 365), "years ago"])
+        return ' '.join([str(int(day_diff / 365)), "year ago"])
+    return ' '.join([str(int(day_diff / 365)), "years ago"])
 
 
 class Pagination(object):
@@ -275,61 +286,6 @@ class Pagination(object):
                     prev=self.has_prev)
 
 
-def unicode_csv_reader(unicode_csv_data, dialect=csv.excel, **kwargs):
-    """Unicode CSV reader."""
-    # This code is taken from http://docs.python.org/library/csv.html#examples
-    # csv.py doesn't do Unicode; encode temporarily as UTF-8:
-    csv_reader = csv.reader(utf_8_encoder(unicode_csv_data),
-                            dialect=dialect, **kwargs)
-    for row in csv_reader:
-        # decode UTF-8 back to Unicode, cell by cell:
-        yield [str(cell, 'utf-8') for cell in row]
-
-
-def utf_8_encoder(unicode_csv_data):
-    """UTF8 encoder for CSV data."""
-    # This code is taken from http://docs.python.org/library/csv.html#examples
-    for line in unicode_csv_data:
-        yield line.encode('utf-8')
-
-
-class UnicodeWriter:
-
-    """A CSV writer which will write rows to CSV file "f"."""
-
-    def __init__(self, f, dialect=csv.excel, encoding="utf-8", **kwds):
-        """Init method."""
-        # Redirect output to a queue
-        self.queue = io.StringIO()
-        self.writer = csv.writer(self.queue, dialect=dialect, **kwds)
-        self.stream = f
-        self.encoder = codecs.getincrementalencoder(encoding)()
-
-    def writerow(self, row):
-        """Write row."""
-        line = []
-        for s in row:
-            if (type(s) == dict):
-                line.append(json.dumps(s))
-            else:
-                line.append(str(s).encode("utf-8"))
-        self.writer.writerow(line)
-        # Fetch UTF-8 output from the queue ...
-        data = self.queue.getvalue()
-        data = data.decode("utf-8")
-        # ... and reencode it into the target encoding
-        data = self.encoder.encode(data)
-        # write to the target stream
-        self.stream.write(data)
-        # empty queue
-        self.queue.truncate(0)
-
-    def writerows(self, rows):  # pragma: no cover
-        """Write rows."""
-        for row in rows:
-            self.writerow(row)
-
-
 def get_user_signup_method(user):
     """Return which OAuth sign up method the user used."""
     msg = 'Sorry, there is already an account with the same e-mail.'
@@ -358,7 +314,6 @@ def get_user_signup_method(user):
         msg += " <strong>It seems that you created an account locally.</strong>"
         msg += " <br/>You can reset your password if you don't remember it."
         return (msg, 'local')
-
 
 
 def get_port():
@@ -392,7 +347,7 @@ def with_cache_disabled(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
         env_cache_disabled = os.environ.get('PYBOSSA_REDIS_CACHE_DISABLED')
-        if env_cache_disabled is None or env_cache_disabled is '0':
+        if env_cache_disabled is None or env_cache_disabled == '0':
             os.environ['PYBOSSA_REDIS_CACHE_DISABLED'] = '1'
         return_value = f(*args, **kwargs)
         if env_cache_disabled is None:
@@ -416,9 +371,9 @@ def is_reserved_name(blueprint, name):
 def username_from_full_name(username):
     """Takes a username that may contain several words with capital letters and
     returns a single word username, no spaces, all lowercases."""
-    if type(username) == str:
-        return username.decode('ascii', 'ignore').lower().replace(' ', '')
-    return username.encode('ascii', 'ignore').decode('utf-8').lower().replace(' ', '')
+    username = username.replace(' ', '')
+    username = username.lower()
+    return username.encode('ascii', 'ignore')
 
 
 def rank(projects, order_by=None, desc=False):
@@ -442,9 +397,9 @@ def rank(projects, order_by=None, desc=False):
         return points
 
     if order_by:
-      projects.sort(key=lambda x: x[str(order_by)], reverse=desc)
+        projects.sort(key=lambda x: x[str(order_by)], reverse=desc)
     else:
-      projects.sort(key=earned_points, reverse=True)
+        projects.sort(key=earned_points, reverse=True)
     return projects
 
 
@@ -455,7 +410,8 @@ def _last_activity_points(project):
     updated_datetime = updated_datetime.split('.')[0]
     last_activity_datetime = last_activity_datetime.split('.')[0]
     updated = datetime.strptime(updated_datetime, '%Y-%m-%dT%H:%M:%S')
-    last_activity = datetime.strptime(last_activity_datetime, '%Y-%m-%dT%H:%M:%S')
+    last_activity = datetime.strptime(
+        last_activity_datetime, '%Y-%m-%dT%H:%M:%S')
     most_recent = max(updated, last_activity)
 
     days_since_modified = (datetime.utcnow() - most_recent).days
@@ -493,6 +449,7 @@ def publish_channel(sentinel, project_short_name, data, type, private=True):
         channel = "channel_%s_%s" % ("public", project_short_name)
     msg = dict(type=type, data=data)
     sentinel.master.publish(channel, json.dumps(msg))
+
 
 # See https://github.com/flask-restful/flask-restful/issues/332#issuecomment-63155660
 def fuzzyboolean(value):

@@ -32,7 +32,7 @@ class TestProjectTransferOwnership(web.Helper):
         project = ProjectFactory.create()
         url = '/project/%s/transferownership' % project.short_name
         res = self.app_get_json(url, follow_redirects=True)
-        assert 'signin' in res.data, res.data
+        assert 'signin' in str(res.data), res.data
 
     @with_context
     def test_transfer_auth_not_owner_get(self):
@@ -56,7 +56,7 @@ class TestProjectTransferOwnership(web.Helper):
         data = json.loads(res.data)
         assert data['form'], data
         assert data['form']['errors'] == {}, data
-        assert data['form']['email_addr'] is None, data
+        assert data['form']['email_addr'] is '', data
         assert data['form']['csrf'] is not None, data
 
     @with_context
@@ -70,7 +70,7 @@ class TestProjectTransferOwnership(web.Helper):
         data = json.loads(res.data)
         assert data['form'], data
         assert data['form']['errors'] == {}, data
-        assert data['form']['email_addr'] is None, data
+        assert data['form']['email_addr'] is '', data
         assert data['form']['csrf'] is not None, data
 
     @with_context

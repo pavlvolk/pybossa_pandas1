@@ -27,7 +27,7 @@ SECRET_KEY = 'my-session-secret'
 
 ITSDANGEROUSKEY = 'its-dangerous-key'
 
-## project configuration
+# project configuration
 BRAND = 'PYBOSSA'
 TITLE = 'PYBOSSA'
 COPYRIGHT = 'Set Your Institution'
@@ -40,30 +40,32 @@ LOCALES = [('en', 'English'), ('es', u'Español'),
            ('it', 'Italiano'), ('fr', u'Français'),
            ('ja', u'日本語'), ('el', u'ελληνικά')]
 
-## Default THEME
+# Default THEME
 THEME = 'default'
 
-## Default number of apps per page
+# Default number of apps per page
 APPS_PER_PAGE = 20
 
-## Default allowed extensions
+# Default allowed extensions
 ALLOWED_EXTENSIONS = ['js', 'css', 'png', 'jpg', 'jpeg', 'gif', 'zip']
 UPLOAD_METHOD = 'local'
 
-## Default number of users shown in the leaderboard
+# Default number of users shown in the leaderboard
 LEADERBOARD = 20
 
-## Default configuration for debug toolbar
+# Default configuration for debug toolbar
 ENABLE_DEBUG_TOOLBAR = False
 
 # Cache default key prefix
 REDIS_SENTINEL = [('localhost', 26379)]
 REDIS_MASTER = 'mymaster'
 REDIS_DB = 0
+REDIS_SOCKET_TIMEOUT = None
+REDIS_RETRY_ON_TIMEOUT = True
 
 REDIS_KEYPREFIX = 'pybossa_cache'
 
-## Default cache timeouts
+# Default cache timeouts
 # Project cache
 AVATAR_TIMEOUT = 30 * 24 * 60 * 60
 APP_TIMEOUT = 15 * 60
@@ -161,3 +163,11 @@ AVATAR_ABSOLUTE = True
 
 # Spam accounts to avoid
 SPAM = []
+
+# Inactive users months to send email notification
+USER_INACTIVE_NOTIFICATION = 5
+# Inactive users months to delete users
+USER_INACTIVE_DELETE = 6
+
+# Inactive users SQL query to select
+INACTIVE_USERS_SQL_QUERY = """SELECT user_id FROM task_run WHERE user_id IS NOT NULL AND to_date(task_run.finish_time, 'YYYY-MM-DD\THH24:MI:SS.US') >= NOW() - '12 month'::INTERVAL AND to_date(task_run.finish_time, 'YYYY-MM-DD\THH24:MI:SS.US') < NOW() - '3 month'::INTERVAL GROUP BY user_id ORDER BY user_id;"""

@@ -20,7 +20,6 @@ import tempfile
 import pandas as pd
 from pybossa.exporter.csv_export import CsvExporter
 from pybossa.core import project_repo, uploader
-from pybossa.util import UnicodeWriter
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 from pybossa.cache.projects import get_project_report_projectdata
@@ -74,7 +73,6 @@ class ProjectReportCsvExporter(CsvExporter):
 
     def _respond_csv(self, ty, id, info_only=False):
         out = tempfile.TemporaryFile()
-        writer = UnicodeWriter(out)
         empty_row = []
         p = project_repo.get(id)
         if p is not None:
@@ -84,7 +82,8 @@ class ProjectReportCsvExporter(CsvExporter):
                               'Average Time Spend Per Task', 'Task Redundancy']
             project_data = get_project_report_projectdata(id)
             project_csv = pd.DataFrame([project_data],
-                                       columns=project_header).to_csv(index=False)
+                                      columns=project_header).to_csv(index=False)
+
             user_section = ['User Statistics']
             user_header = ['Id', 'Name', 'Fullname', 'Total Tasks Completed',
                            'Percent Tasks Completed', 'First Task Submission',

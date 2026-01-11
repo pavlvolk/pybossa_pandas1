@@ -34,6 +34,16 @@ from pybossa.exporter.json_export import JsonExporter
 def schedule_job(function, scheduler):
     """Schedule a job and return a log message."""
     scheduled_jobs = scheduler.get_jobs()
+    for sj in scheduled_jobs:
+        if (function['name'].__name__ in sj.description and
+            sj.args == function['args'] and
+                sj.kwargs == function['kwargs']):
+            sj.cancel()
+            msg = ('WARNING: Job %s(%s, %s) is already scheduled'
+                   % (function['name'].__name__, function['args'],
+                      function['kwargs']))
+            return msg
+    # If job was scheduled, it exists up here, else it continues
     job = scheduler.schedule(
         scheduled_time=(function.get('scheduled_time') or datetime.utcnow()),
         func=function['name'],
@@ -42,15 +52,7 @@ def schedule_job(function, scheduler):
         interval=function['interval'],
         repeat=None,
         timeout=function['timeout'])
-    for sj in scheduled_jobs:
-        if (function['name'].__name__ in sj.description and
-            sj.args == function['args'] and
-                sj.kwargs == function['kwargs']):
-            job.cancel()
-            msg = ('WARNING: Job %s(%s, %s) is already scheduled'
-                   % (function['name'].__name__, function['args'],
-                      function['kwargs']))
-            return msg
+
     msg = ('Scheduled %s(%s, %s) to run every %s seconds'
            % (function['name'].__name__, function['args'], function['kwargs'],
               function['interval']))
@@ -499,8 +501,10 @@ def warn_old_project_owners():
     return True
 
 
-def send_mail(message_dict):
+def send_mail(message_dict, user_id=None):
     """Send email."""
+    from pybossa.core import db
+    from pybossa.model.user import User
     message = Message(**message_dict)
     spam = False
     for r in message_dict['recipients']:
@@ -510,6 +514,11 @@ def send_mail(message_dict):
             break
     if not spam:
         mail.send(message)
+        if user_id:
+            user = User.query.get(user_id)
+            user.notified_at = datetime.now()
+            db.session.add(user)
+            db.session.commit()
 
 
 def import_tasks(project_id, from_auto=False, **form_data):
@@ -735,12 +744,14 @@ def news():
         tmp = get_news(score)
         if (d.entries and (len(tmp) == 0)
            or (tmp[0]['updated'] != d.entries[0]['updated'])):
-            sentinel.master.zadd(FEED_KEY, float(score),
-                                 pickle.dumps(d.entries[0]))
+            mapping = dict()
+            mapping[pickle.dumps(d.entries[0])] = float(score)
+            sentinel.master.zadd(FEED_KEY, mapping)
             notify = True
         score += 1
     if notify:
         notify_news_admins()
+
 
 def check_failed():
     """Check the jobs that have failed and requeue them."""
@@ -774,7 +785,7 @@ def check_failed():
                                  subject=subject, body=body)
                 send_mail(mail_dict)
                 ttl = current_app.config.get('FAILED_JOBS_MAILS')*24*60*60
-                sentinel.master.setex(KEY, ttl, True)
+                sentinel.master.setex(KEY, ttl, 1)
     if count > 0:
         return "JOBS: %s You have failed the system." % job_ids
     else:
@@ -930,7 +941,7 @@ def get_notify_inactive_accounts(queue='monthly'):
                              html=html)
 
             job = dict(name=send_mail,
-                       args=[mail_dict],
+                       args=[mail_dict, user.id],
                        kwargs={},
                        timeout=timeout,
                        queue=queue)
@@ -943,19 +954,9 @@ def get_delete_inactive_accounts(queue='bimonthly'):
     from pybossa.model.user import User
     from pybossa.core import db
     timeout = current_app.config.get('TIMEOUT')
-    time = current_app.config.get('USER_INACTIVE_DELETE')
+    time = current_app.config.get('USER_DELETE_AFTER_NOTIFICATION', '1 month')
 
-    sql = text('''SELECT "user".id from "user", task_run
-               WHERE "user".id = task_run.user_id AND "user".id NOT IN
-               (SELECT user_id FROM task_run
-               WHERE user_id IS NOT NULL
-               AND to_date(task_run.finish_time, 'YYYY-MM-DD\THH24:MI:SS.US')
-               >= NOW() - '{} month'::INTERVAL
-               GROUP BY user_id
-               ORDER BY user_id) AND
-               "user".admin=false
-               GROUP BY "user".id ORDER BY "user".id
-               ;'''.format(time))
+    sql = f"select * from \"user\" where notified_at < NOW() - INTERVAL '{time}';"
 
     results = db.slave_session.execute(sql)
 

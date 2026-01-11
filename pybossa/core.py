@@ -20,7 +20,7 @@ import os
 import logging
 import humanize
 from flask import Flask, url_for, request, render_template, \
-    flash, _app_ctx_stack, abort
+    flash, _app_ctx_stack, abort, redirect, request
 from flask_login import current_user
 from flask_babel import gettext
 from flask_assets import Bundle
@@ -33,6 +33,7 @@ from pybossa.util import pretty_date, handle_content_type, get_disqus_sso
 from pybossa.news import FEED_KEY as NEWS_FEED_KEY
 from pybossa.news import get_news
 from pybossa.messages import *
+from pybossa import util
 
 
 def create_app(run_as_server=True):
@@ -95,8 +96,10 @@ def configure_app(app):
     else:
         config_path = os.path.abspath(os.environ.get('PYBOSSA_SETTINGS'))
 
-    config_upref_mdata = os.path.join(os.path.dirname(config_path), 'settings_upref_mdata.py')
-    app.config.upref_mdata = True if os.path.exists(config_upref_mdata) else False
+    config_upref_mdata = os.path.join(
+        os.path.dirname(config_path), 'settings_upref_mdata.py')
+    app.config.upref_mdata = True if os.path.exists(
+        config_upref_mdata) else False
 
     # Override DB in case of testing
     if app.config.get('SQLALCHEMY_DATABASE_TEST_URI'):
@@ -117,11 +120,12 @@ def setup_json_serializer(app):
 def setup_cors(app):
     cors.init_app(app, resources=app.config.get('CORS_RESOURCES'))
 
+
 def setup_sse(app):
     if app.config['SSE']:
         msg = "WARNING: async mode is required as Server Sent Events are enabled."
         app.logger.warning(msg)
-    else:
+    else:  # pragma: no cover
         msg = "INFO: async mode is disabled."
         app.logger.info(msg)
 
@@ -247,7 +251,7 @@ def setup_logging(app):
         file_handler.setFormatter(Formatter(
             '%(name)s:%(levelname)s:[%(asctime)s] %(message)s '
             '[in %(pathname)s:%(lineno)d]'
-            ))
+        ))
         file_handler.setLevel(log_level)
         app.logger.addHandler(file_handler)
         logger = logging.getLogger('pybossa')
@@ -273,12 +277,12 @@ def setup_babel(app):
     @babel.localeselector
     def _get_locale():
         locales = [l[0] for l in app.config.get('LOCALES')]
-        if current_user.is_authenticated:
+        if current_user and current_user.is_authenticated:
             lang = current_user.locale
         else:
             lang = request.cookies.get('language')
         if (lang is None or lang == '' or
-            lang.lower() not in locales):
+                lang.lower() not in locales):
             lang = request.accept_languages.best_match(locales)
         if (lang is None or lang == '' or
                 lang.lower() not in locales):
@@ -321,21 +325,23 @@ def setup_blueprints(app):
 
     # from rq_dashboard import RQDashboard
     import rq_dashboard
-    app.config.from_object(rq_dashboard.default_settings)
+    # app.config.from_object(rq_dashboard.default_settings)
+    rq_dashboard.blueprint.before_request(is_admin)
     app.register_blueprint(rq_dashboard.blueprint, url_prefix="/admin/rq",
                            redis_conn=sentinel.master)
-    # RQDashboard(app, url_prefix='/admin/rq', auth_handler=current_user,
-    #             redis_conn=sentinel.master)
+
+
+def is_admin():
+    """Check if user is admin."""
+    if current_user.is_anonymous:
+        return abort(401)
+    if current_user.admin is False:
+        return abort(403)
 
 
 def setup_external_services(app):
     """Setup external services."""
-    setup_twitter_login(app)
-    setup_facebook_login(app)
-    setup_google_login(app)
-    setup_flickr_importer(app)
     setup_dropbox_importer(app)
-    setup_twitter_importer(app)
     setup_youtube_importer(app)
 
 
@@ -352,58 +358,6 @@ def setup_twitter_login(app):
         print(inst)
         print("Twitter signin disabled")
         log_message = 'Twitter signin disabled: %s' % str(inst)
-        app.logger.info(log_message)
-
-
-def setup_facebook_login(app):
-    try:  # pragma: no cover
-        if (app.config['FACEBOOK_APP_ID']
-                and app.config['FACEBOOK_APP_SECRET']
-                and app.config.get('LDAP_HOST') is None):
-            facebook.init_app(app)
-            from pybossa.view.facebook import blueprint as facebook_bp
-            app.register_blueprint(facebook_bp, url_prefix='/facebook')
-    except Exception as inst:  # pragma: no cover
-        print(type(inst))
-        print(inst.args)
-        print(inst)
-        print("Facebook signin disabled")
-        log_message = 'Facebook signin disabled: %s' % str(inst)
-        app.logger.info(log_message)
-
-
-def setup_google_login(app):
-    try:  # pragma: no cover
-        if (app.config['GOOGLE_CLIENT_ID']
-                and app.config['GOOGLE_CLIENT_SECRET']
-                and app.config.get('LDAP_HOST') is None):
-            google.init_app(app)
-            from pybossa.view.google import blueprint as google_bp
-            app.register_blueprint(google_bp, url_prefix='/google')
-    except Exception as inst:  # pragma: no cover
-        print(type(inst))
-        print(inst.args)
-        print(inst)
-        print("Google signin disabled")
-        log_message = 'Google signin disabled: %s' % str(inst)
-        app.logger.info(log_message)
-
-
-def setup_flickr_importer(app):
-    try:  # pragma: no cover
-        if (app.config['FLICKR_API_KEY']
-                and app.config['FLICKR_SHARED_SECRET']):
-            flickr.init_app(app)
-            from pybossa.view.flickr import blueprint as flickr_bp
-            app.register_blueprint(flickr_bp, url_prefix='/flickr')
-            importer_params = {'api_key': app.config['FLICKR_API_KEY']}
-            importer.register_flickr_importer(importer_params)
-    except Exception as inst:  # pragma: no cover
-        print(type(inst))
-        print(inst.args)
-        print(inst)
-        print("Flickr importer not available")
-        log_message = 'Flickr importer not available: %s' % str(inst)
         app.logger.info(log_message)
 
 
@@ -437,6 +391,7 @@ def setup_twitter_importer(app):
         log_message = 'Twitter importer not available: %s' % str(inst)
         app.logger.info(log_message)
 
+
 def setup_youtube_importer(app):
     try:  # pragma: no cover
         if app.config['YOUTUBE_API_SERVER_KEY']:
@@ -452,6 +407,7 @@ def setup_youtube_importer(app):
         log_message = 'Youtube importer not available: %s' % str(inst)
         app.logger.info(log_message)
 
+
 def url_for_other_page(page):
     """Setup url for other pages."""
     args = request.view_args.copy()
@@ -466,6 +422,15 @@ def setup_jinja(app):
 
 def setup_error_handlers(app):
     """Setup error handlers."""
+
+    from flask_wtf.csrf import CSRFError
+
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(e):
+        response = dict(template='400.html', code=400,
+                        description=CSRFERROR)
+        return handle_content_type(response)
+
     @app.errorhandler(400)
     def _bad_request(e):
         response = dict(template='400.html', code=400,
@@ -530,12 +495,11 @@ def setup_hooks(app):
             except TypeError:
                 abort(400)
 
-
     @app.context_processor
     def _global_template_context():
         notify_admin = False
         if (current_user and current_user.is_authenticated
-            and current_user.admin):
+                and current_user.admin):
             key = NEWS_FEED_KEY + str(current_user.id)
             if sentinel.slave.get(key):
                 notify_admin = True
@@ -597,11 +561,11 @@ def setup_hooks(app):
             plugins=plugins,
             ldap_enabled=ldap_enabled)
 
-    @csrf.error_handler
-    def csrf_error_handler(reason):
-        response = dict(template='400.html', code=400,
-                        description=reason)
-        return handle_content_type(response)
+    # @csrf.error_handler
+    # def csrf_error_handler(reason):
+    #     response = dict(template='400.html', code=400,
+    #                     description=reason)
+    #     return handle_content_type(response)
 
 
 def setup_jinja2_filters(app):
@@ -615,7 +579,7 @@ def setup_jinja2_filters(app):
         return humanize.intword(obj)
 
     @app.template_filter('disqus_sso')
-    def _disqus_sso(obj): # pragma: no cover
+    def _disqus_sso(obj):  # pragma: no cover
         return get_disqus_sso(obj)
 
 
@@ -716,18 +680,20 @@ def setup_ldap(app):
     if app.config.get('LDAP_HOST'):
         ldap.init_app(app)
 
+
 def setup_profiler(app):
     if app.config.get('FLASK_PROFILER'):
         flask_profiler.init_app(app)
+
 
 def setup_upref_mdata(app):
     """Setup user preference and metadata choices for user accounts"""
     global upref_mdata_choices
     upref_mdata_choices = dict(languages=[], locations=[],
-                                timezones=[], user_types=[])
+                               timezones=[], user_types=[])
     if app.config.upref_mdata:
         from settings_upref_mdata import (upref_languages, upref_locations,
-                mdata_timezones, mdata_user_types)
+                                          mdata_timezones, mdata_user_types)
         upref_mdata_choices['languages'] = upref_languages()
         upref_mdata_choices['locations'] = upref_locations()
         upref_mdata_choices['timezones'] = mdata_timezones()

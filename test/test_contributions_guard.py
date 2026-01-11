@@ -36,14 +36,14 @@ class TestContributionsGuard(object):
         self.task = Task(id=22)
 
     def test_stamp_registers_specific_user_id_and_task(self):
-        key = 'pybossa:task_requested:user:33:task:22'
+        key = b'pybossa:task_requested:user:33:task:22'
 
         self.guard.stamp(self.task, self.auth_user)
 
         assert key in list(self.connection.keys()), list(self.connection.keys())
 
     def test_stamp_registers_specific_user_ip_and_task_if_no_id_provided(self):
-        key = 'pybossa:task_requested:user:127.0.0.1:task:22'
+        key = b'pybossa:task_requested:user:127.0.0.1:task:22'
 
         self.guard.stamp(self.task, self.anon_user)
 
@@ -83,8 +83,8 @@ class TestContributionsGuard(object):
         assert self.guard.retrieve_timestamp(self.task, self.auth_user) is None
 
     @patch('pybossa.contributions_guard.make_timestamp')
-    def test_retrieve_timestamp_returs_the_timestamp_for_stamped_task(self, make_timestamp):
-        make_timestamp.return_value = b'now'
+    def test_retrieve_timestamp_returns_the_timestamp_for_stamped_task(self, make_timestamp):
+        make_timestamp.return_value = 'now'
         self.guard.stamp(self.task, self.auth_user)
 
-        assert self.guard.retrieve_timestamp(self.task, self.auth_user) == b'now'
+        assert self.guard.retrieve_timestamp(self.task, self.auth_user) == 'now'

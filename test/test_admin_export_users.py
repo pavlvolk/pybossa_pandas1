@@ -19,7 +19,6 @@
 import json
 import io
 from default import with_context
-from pybossa.util import unicode_csv_reader
 from factories import UserFactory
 from helper import web
 
@@ -54,7 +53,7 @@ class TestExportUsers(web.Helper):
         self.signin()
 
         res = self.app.get('/admin/users/export?format=json',
-                            follow_redirects=True)
+                           follow_redirects=True)
         data = res.data
         json_data = json.loads(data)
 
@@ -71,7 +70,7 @@ class TestExportUsers(web.Helper):
         restricted = UserFactory.create(restrict=True, id=5000015)
 
         res = self.app.get('/admin/users/export?format=csv',
-                            follow_redirects=True)
+                           follow_redirects=True)
         data = res.data
 
         for attribute in self.exportable_attributes:
@@ -95,5 +94,5 @@ class TestExportUsers(web.Helper):
         data = res.data
         assert restricted.name not in str(data.decode('utf-8'))
         import pandas as pd
-        df = pd.DataFrame.from_csv(io.StringIO(data.decode('utf-8')))
+        df = pd.read_csv(io.StringIO(data.decode('utf-8')))
         assert df.shape[0] == 3, df.shape[0]
